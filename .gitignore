@@ -1,0 +1,60 @@
+# Documentos locais e instruções de agentes (não versionar conforme solicitado)
+AGENTS.md
+agents.md
+PROJETO.md
+PROJECT.md
+project.md
+Trabalho2-MC714_2s2026.pdf
+
+# Ambientes virtuais e cache do Python / uv
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testes, cobertura e linters
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+
+# Artefatos auxiliares de compilação LaTeX (mantemos apenas main.tex e main.pdf)
+relatorio/*.aux
+relatorio/*.bbl
+relatorio/*.blg
+relatorio/*.fdb_latexmk
+relatorio/*.fls
+relatorio/*.log
+relatorio/*.out
+relatorio/*.synctex.gz
+relatorio/*.toc
+
+# Arquivos temporários de SO e IDEs
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
