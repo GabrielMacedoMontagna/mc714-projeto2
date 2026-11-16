@@ -97,16 +97,16 @@ Cada nó (`mc714-node`) pode ser configurado integralmente via variáveis de amb
 
 | Variável de Ambiente | Flag CLI | Padrão | Descrição |
 | :--- | :--- | :--- | :--- |
-| `NODE_ID` | `--node-id` | *(obrigatório)* | Identificador único do nó (ex.: `node-1`) |
-| `HOST` | `--host` | `0.0.0.0` | Endereço IP de escuta do servidor gRPC |
-| `PORT` | `--port` | `50051` | Porta TCP do servidor gRPC |
-| `ADVERTISE_HOST` | `--advertise-host` | `127.0.0.1` | Host anunciado para os pares do cluster |
-| `PEERS` | `--peers` | `""` | Lista de pares `node_id=host:port` separados por vírgula |
-| `QUORUM_R` | `--quorum-r` | `3` | Tamanho do quorum de leitura ($N_R$) |
-| `QUORUM_W` | `--quorum-w` | `3` | Tamanho do quorum de escrita ($N_W$) |
-| `HB_INTERVAL_MS` | `--hb-interval-ms` | `150` | Intervalo de envio de *heartbeats* em milissegundos |
-| `HB_TIMEOUT_MS` | `--hb-timeout-ms` | `500` | Limiar de suspeita de falha em milissegundos |
-| `RPC_TIMEOUT_MS` | `--rpc-timeout-ms` | `1000` | *Deadline* explícito obrigatório de todas as chamadas gRPC |
+| `MC714_NODE_ID` | `--node-id` | `1` | Identificador numérico único do nó (ex.: `1`) |
+| `MC714_HOST` | `--host` | `0.0.0.0` | Endereço IP de escuta do servidor gRPC |
+| `MC714_PORT` | `--port` | `50051` | Porta TCP do servidor gRPC |
+| `MC714_PEERS` | `--peers` | `1=127.0.0.1:50051,2=127.0.0.1:50052,3=127.0.0.1:50053` | Lista de pares `id=host:port` separados por vírgula (inclui o próprio nó) |
+| `MC714_QUORUM_R` | `--quorum-r` | `2` | Tamanho do quórum de leitura ($N_R$); o `compose.yaml` usa `3` |
+| `MC714_QUORUM_W` | `--quorum-w` | `2` | Tamanho do quórum de escrita ($N_W$); o `compose.yaml` usa `3` |
+| `MC714_HB_INTERVAL_MS` | `--hb-interval-ms` | `80` | Intervalo de envio de *heartbeats* em milissegundos |
+| `MC714_HB_TIMEOUT_MS` | `--hb-timeout-ms` | `280` | Limiar de suspeita de falha em milissegundos |
+| `MC714_RPC_TIMEOUT_MS` | `--rpc-timeout-ms` | `400` | *Deadline* explícito obrigatório de todas as chamadas gRPC |
+| `MC714_FAULT_SEED` | `--fault-seed` | `42` | Semente do injetor de falhas (perda/atraso reprodutíveis) |
 
 ---
 
@@ -125,14 +125,12 @@ docker compose logs -f node-1
 ```
 
 ### 5.3. Executar a Demonstração End-to-End (Operação Normal + Falhas + Read-Repair)
-Com o cluster em execução (ou iniciando um cluster local automático com `--spawn-local`), execute:
+Com o cluster Docker Compose em execução (portas 50051..50055), execute:
 ```bash
-# Contra o cluster Docker Compose ativo nas portas 50051..50055:
 uv run python scripts/demo_cluster.py
-
-# Ou subindo e encerrando automaticamente os 5 nós em processos locais:
-uv run python scripts/demo_cluster.py --spawn-local
+# Para outro cluster: uv run python scripts/demo_cluster.py --peers "1=host:porta,..."
 ```
+O script percorre 4 etapas: (1) status dos nós; (2) cenário normal — uma entrada na SC sem contenção (8 = $2(N-1)$ mensagens) e três nós disputando a SC com escrita por quórum; (3) falha injetada — *crash-stop* do Nó 5 e isolamento do Nó 4, com o tempo de detecção medido pelo Nó 1, escrita aceita na maioria $\{1,2,3\}$ e rejeitada no Nó 4; (4) recuperação — leitura por quórum que repara os Nós 4 e 5 (*Read-Repair*).
 
 ### 5.4. Encerrar e Limpar o Cluster
 ```bash
@@ -143,7 +141,7 @@ docker compose down -v
 
 ## 6. Verificação de Qualidade, Tipagem e Testes Automatizados
 
-O projeto possui verificação estrita de lint (Ruff com complexidade ciclomática McCabe $\le 10$), formatação, checagem estática de tipos (Pyright) e suíte de testes unitários e de integração com cobertura $> 90\%$:
+O projeto possui verificação estrita de lint (Ruff com complexidade ciclomática McCabe $\le 10$), formatação, checagem estática de tipos (Pyright) e suíte de 16 testes (14 unitários e 2 de integração multi-nó gRPC) com cobertura de linhas de 93%:
 
 ```bash
 # 1. Lint e complexidade ciclomática

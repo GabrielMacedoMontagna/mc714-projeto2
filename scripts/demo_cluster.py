@@ -3,15 +3,17 @@
 
 Executa e exibe no terminal:
 1. Cenário Normal: Exclusão Mútua (Ricart-Agrawala) e Escrita/Leitura por Quorum;
-2. Cenário de Falha Injetada: Crash-Stop do Nó 5 e Partição 3x2 ({1,2,3} vs {4,5});
-3. Recuperação e Consequência Esperada: Detecção via Heartbeat, continuidade da Seção
-   Crítica e reparo automático de réplicas desatualizadas (Read-Repair).
+2. Cenário de Falha Injetada: Crash-Stop do Nó 5 e isolamento do Nó 4 por partição
+   ({1,2,3} | {4} | {5}), com medição do tempo de detecção pelo Heartbeat;
+3. Recuperação e Consequência Esperada: escrita aceita na maioria {1,2,3}, escrita
+   rejeitada no Nó 4 isolado e reparo automático das réplicas defasadas (Read-Repair).
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import time
 
 from mc714_p2.node.config import parse_peers_spec
 from mc714_p2.rpc.client import PeerRpcClient
@@ -21,6 +23,24 @@ DEFAULT_COMPOSE_PEERS = (
     "1=127.0.0.1:50051,2=127.0.0.1:50052,3=127.0.0.1:50053,"
     "4=127.0.0.1:50054,5=127.0.0.1:50055"
 )
+
+
+async def _wait_until_suspected(
+    client: PeerRpcClient,
+    observer_id: int,
+    expected: set[int],
+    max_wait_sec: float = 3.0,
+    poll_sec: float = 0.02,
+) -> tuple[float, list[int], list[int]]:
+    """Consulta o observador até que todos os nós esperados estejam suspeitos."""
+    t0 = time.perf_counter()
+    while True:
+        st = await client.get_node_status(peer_id=observer_id, rpc_timeout_sec=2.0)
+        suspected = set(st.suspected_peers)
+        elapsed = time.perf_counter() - t0
+        if expected <= suspected or elapsed >= max_wait_sec:
+            return elapsed * 1000.0, sorted(suspected), list(st.active_peers)
+        await asyncio.sleep(poll_sec)
 
 
 async def run_demo(peers_spec: str) -> None:
@@ -46,6 +66,19 @@ async def run_demo(peers_spec: str) -> None:
             "\n=== [2/4] Cenário Normal: Disputa Concorrente pela Seção Crítica "
             "(Ricart-Agrawala) e Escrita Coordenada por Quorum (R=3, W=3) ==="
         )
+        n_nodes = len(endpoints)
+        solo = await client.client_execute_cs(
+            peer_id=1,
+            resource_tag="recurso-compartilhado",
+            hold_ms=10.0,
+            timeout_ms=3000.0,
+            rpc_timeout_sec=4.0,
+        )
+        print(
+            f"  [Sem contenção] Nó 1 entrou sozinho na SC | "
+            f"Msgs={solo.protocol_messages_used} (teórico 2(N-1)={2 * (n_nodes - 1)})"
+        )
+        print("  [Com contenção] Nós 1, 2 e 3 pedem a SC ao mesmo tempo:")
         cs_replies = await asyncio.gather(
             client.client_execute_cs(
                 peer_id=1,
@@ -82,6 +115,10 @@ async def run_demo(peers_spec: str) -> None:
                 f"Intervalo=[{rep.enter_lamport_ts}, {rep.exit_lamport_ts}] | "
                 f"Espera={rep.wait_latency_ms:.2f}ms | Msgs={msgs}"
             )
+        print(
+            "  (Intervalos de Lamport disjuntos = exclusão mútua. Sob contenção, "
+            "cada nó também responde aos pedidos dos demais concorrentes.)"
+        )
 
         print(
             "\n=== [3/4] Cenário de Falha Injetada: Crash-Stop no Nó 5 e "
@@ -110,11 +147,12 @@ async def run_demo(peers_spec: str) -> None:
                 rpc_timeout_sec=2.0,
             )
 
-        await asyncio.sleep(0.45)
-        st1 = await client.get_node_status(peer_id=1, rpc_timeout_sec=2.0)
+        detect_ms, suspected, active = await _wait_until_suspected(
+            client, observer_id=1, expected={4, 5}
+        )
         print(
-            f"  -> Detector de Falhas no Nó 1 identificou nós suspeitos: "
-            f"{list(st1.suspected_peers)} (Ativos restantes: {list(st1.active_peers)})"
+            f"  -> Detector de Falhas no Nó 1 suspeitou de {suspected} "
+            f"em ~{detect_ms:.0f} ms após a injeção (Ativos restantes: {active})"
         )
 
         w_maj = await client.client_quorum_write(
@@ -126,7 +164,7 @@ async def run_demo(peers_spec: str) -> None:
         print(
             f"  -> Escrita na partição majoritária {{1,2,3}}: "
             f"sucesso={w_maj.success}, v={w_maj.version}, "
-            f"ACKs={w_maj.write_phase_acks}/3"
+            f"ACKs={w_maj.write_phase_acks} (quórum W=3)"
         )
 
         w_min = await client.client_quorum_write(

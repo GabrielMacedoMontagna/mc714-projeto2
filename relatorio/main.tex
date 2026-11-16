@@ -30,8 +30,8 @@
 \author{
 \IEEEauthorblockN{Gabriel de Macedo Cavassani Montagna (RA: 242352) \quad Nicholas Pucharelli Fontanini (RA: 253769)}
 \IEEEauthorblockA{\textit{Instituto de Computação (IC) -- Universidade Estadual de Campinas (UNICAMP)}\\
-MC714 -- Sistemas Distribuídos (2º Semestre de 2026) -- Prof. Fernando W. Rodrigues\\
-\textbf{Repositório GitLab (IC):} \url{https://gitlab.ic.unicamp.br/ra242352/mc714-projeto2}\\
+MC714 -- Sistemas Distribuídos (2º Semestre de 2026) -- Prof. Carlos Alberto Astudillo Trujillo\\
+%\textbf{Repositório GitLab (IC):} \url{https://gitlab.ic.unicamp.br/ra242352/mc714-projeto2}\\
 \textbf{Vídeo de Demonstração (5 min):} \url{https://youtu.be/INSERIR_LINK_DO_VIDEO_AQUI}}
 }
 
@@ -58,7 +58,7 @@ Neste trabalho, projetamos e implementamos um núcleo distribuído integrado em 
     \item \textbf{Algoritmo Bônus (Detecção de Falhas):} Detector de falhas periódico baseado em \textit{Heartbeat} \cite{chandra1996} integrado diretamente à máquina de estados de Ricart-Agrawala e ao roteador de quórum, permitindo contornar falhas \textit{crash-stop} sem violar as invariantes de segurança (\textit{safety}).
 \end{itemize}
 
-Todos os algoritmos foram implementados de raiz, sem uso de bibliotecas prontas de consenso ou coordenação, executando em processos isolados via contêineres Docker Compose v2 e comunicando-se exclusivamente por gRPC assíncrono com \textit{deadlines} explícitos em todas as chamadas remotas.
+Todos os algoritmos foram implementados de raiz, sem uso de bibliotecas prontas de consenso ou coordenação, implantados como cinco contêineres independentes via Docker Compose v2 e comunicando-se exclusivamente por gRPC assíncrono com \textit{deadlines} explícitos em todas as chamadas remotas.
 
 \section{Fundamentação Teórica e Algoritmos}
 
@@ -136,7 +136,7 @@ Para permitir experimentos controlados e reprodutíveis sem depender de privilé
 
 \subsection{Ambiente de Execução}
 
-Todos os experimentos foram conduzidos em uma estação de trabalho equipada com processador \textbf{x86\_64 de 12 núcleos lógicos}, sistema operacional \textbf{Linux (kernel 7.0.0-38-generic)}, ambiente \textbf{Python 3.13.12} gerenciado pelo \texttt{uv}, biblioteca \textbf{grpcio 1.85.1} e \textbf{protobuf 6.33.6}. Os metadados completos de hardware, software e todas as observações individuais brutas encontram-se arquivados em \texttt{results/raw/experiments\_raw.json}.
+Todos os experimentos foram conduzidos em uma estação de trabalho equipada com processador \textbf{x86\_64 de 12 núcleos lógicos}, sistema operacional \textbf{Linux (kernel 7.0.0-38-generic)}, ambiente \textbf{Python 3.13.12} gerenciado pelo \texttt{uv}, biblioteca \textbf{grpcio 1.85.1} e \textbf{protobuf 6.33.6}. Os metadados completos de hardware, software e todas as observações individuais brutas encontram-se arquivados em \texttt{results/raw/experiments\_raw.json}. Para automatizar centenas de execuções com sementes controladas, o orquestrador experimental (\texttt{runner.py}) instancia cada nó como um servidor gRPC independente, com porta TCP, estado e \textit{FaultInjector} próprios, no \textit{localhost} e dentro do processo do orquestrador; toda interação entre nós ocorre exclusivamente via gRPC. A implantação em contêineres separados (\texttt{compose.yaml}) executa exatamente o mesmo código e é validada pelo script \texttt{demo\_cluster.py}.
 
 \subsection{Plano Fatorial, Aquecimento e Métricas}
 
@@ -241,7 +241,7 @@ $f=2$ nós falhos & 20,03 & 26,06 & 27,62 & 9,99 & 22,06 & 23,58 & \textbf{10} \
 
 \textbf{Análise do trade-off entre políticas $(R, W)$:} Os resultados da Tabela~\ref{tab:quorum} ilustram de forma cristalina a assimetria projetada por Gifford \cite{gifford1979}. Em todas as configurações, a escrita apresenta aproximadamente o dobro da latência da leitura equivalente porque o protocolo de escrita executa \textbf{duas rodadas de RPCs sequenciais} (Fase 1: descoberta de $v_{\max}$; Fase 2: gravação de $v_{\max}+1$), ao passo que a leitura realiza apenas uma rodada. Ao deslocar a configuração de $(R=3, W=3)$ para $(R=2, W=4)$ e $(R=1, W=5)$, a mediana de escrita aumenta de $22,56\text{ ms}$ para $23,58\text{ ms}$ e $27,01\text{ ms}$, pois o coordenador passa a depender das réplicas mais distantes do gradiente de rede para fechar o quórum $N_W$. Em contrapartida, a leitura cai de $11,07\text{ ms}$ ($R=3$) para $9,27\text{ ms}$ ($R=2$) e atinge $\mathbf{0,04\text{ ms}}$ (p99 de $0,06\text{ ms}$) em $R=1$, já que toda a escrita é replicada universalmente ($W=5$) e a leitura é satisfeita instantaneamente na memória local do coordenador sem RPCs remotas. Contudo, a política $(R=1, W=5)$ sacrifica totalmente a tolerância a falhas na escrita (qualquer nó inacessível impede atingir $W=5$).
 
-\textbf{Tolerância a falhas, partições e Read-Repair:} Com a política majoritária $(R=3, W=3)$ em $N=5$, o sistema suportou perfeitamente tanto $f=1$ quanto $f=2$ nós em estado \textit{crash-stop} (limite teórico $f = \lfloor(5-1)/2\rfloor = 2$), mantendo 100\% de disponibilidade de leitura e escrita e 100\% de consistência forte (nenhuma leitura obsoleta). Durante as janelas em que os nós falhos foram reativados com dados defasados, as leituras subsequentes identificaram a divergência de versão e acionaram o \textit{Read-Repair} síncrono, reparando com sucesso \textbf{26 réplicas desatualizadas} no cenário $f=1$ e \textbf{10 réplicas} no cenário $f=2$. Esse mecanismo causa apenas um leve aumento nos percentis de cauda de leitura (p95 subindo de $14,59\text{ ms}$ para $25,65\text{ ms}$ em $f=1$), correspondente à rodada extra de escrita de reparo nas operações em que a divergência é detectada. Adicionalmente, validamos em teste funcional de partição $3 \times 2$ (\texttt{demo\_cluster.py}) que a partição majoritária $\{1,2,3\}$ progride normalmente ($3/3$ ACKs), enquanto tentativas de escrita na partição minoritária $\{4,5\}$ são bloqueadas com segurança por falta de quórum.
+\textbf{Tolerância a falhas, partições e Read-Repair:} Com a política majoritária $(R=3, W=3)$ em $N=5$, o sistema suportou perfeitamente tanto $f=1$ quanto $f=2$ nós em estado \textit{crash-stop} (limite teórico $f = \lfloor(5-1)/2\rfloor = 2$), mantendo 100\% de disponibilidade de leitura e escrita e 100\% de consistência forte (nenhuma leitura obsoleta). Durante as janelas em que os nós falhos foram reativados com dados defasados, as leituras subsequentes identificaram a divergência de versão e acionaram o \textit{Read-Repair} síncrono, reparando com sucesso \textbf{26 réplicas desatualizadas} no cenário $f=1$ e \textbf{10 réplicas} no cenário $f=2$. Esse mecanismo causa apenas um leve aumento nos percentis de cauda de leitura (p95 subindo de $14,59\text{ ms}$ para $25,65\text{ ms}$ em $f=1$), correspondente à rodada extra de escrita de reparo nas operações em que a divergência é detectada. Adicionalmente, o teste de integração automatizado de partição $3 \times 2$ (\texttt{tests/integration}) comprova que a partição majoritária $\{1,2,3\}$ progride normalmente ($3$ ACKs), enquanto escritas na partição minoritária $\{4,5\}$ são bloqueadas com segurança por falta de quórum; o mesmo comportamento é exibido no cluster Docker pelo script \texttt{demo\_cluster.py}.
 
 \subsection{Experimento 3: Detector de Falhas por Heartbeat}
 
@@ -284,6 +284,10 @@ $\tau=180\text{ ms}, 40\%$ & 114,49 & 54,48 & 149,48 & 177,40 & 182,78 & \textbf
 Quando introduzimos perda probabilística de pacotes com $\tau = 180\text{ ms}$ ($k = 4$ janelas de $45\text{ ms}$), a probabilidade de um par saudável perder quatro \textit{heartbeats} consecutivos cresce com $p_{\text{loss}}^k$: sob $10\%$ de perda, a taxa de falsos positivos medida foi de apenas \textbf{1,0\%}; sob $25\%$ de perda, subiu para \textbf{9,0\%}; e sob perda severa de $40\%$, atingiu \textbf{34,0\%} das janelas de observação. Nota-se também na Tabela~\ref{tab:hb} que, sob $25\%$ e $40\%$ de perda, o tempo aparente de detecção após um \textit{crash} real diminui para $126,83\text{ ms}$ e $114,49\text{ ms}$ (com maior desvio padrão, $\sigma \approx 54\text{ ms}$), pois o último \textit{heartbeat} anterior ao \textit{crash} frequentemente já havia sido descartado pela rede, antecipando o estouro do temporizador $\tau$.
 
 \textbf{Implicação para o sistema integrado:} Esse resultado demonstra por que o acoplamento entre um detector de falhas não-confiável e Ricart-Agrawala exige cautela na escolha de $\tau_{\text{suspect}}$. Um $\tau$ excessivamente agressivo em uma rede com perdas induz falsos positivos que fariam um nó ignorar temporariamente a resposta \texttt{REPLY} de um par vivo, podendo comprometer a segurança da SC caso a rede descarte mensagens críticas. Em contrapartida, configurar $\tau \ge 5 \cdot \Delta t_{\text{hb}}$ elimina falsos positivos em redes normais ($p_{\text{loss}} \le 5\%$) enquanto limita o bloqueio máximo sob falha real a menos de $250\text{ ms}$.
+
+\subsection{Limitações}
+
+(i) Os experimentos compartilham um único processo, \textit{event loop} e máquina física; os nós são lógicos e não constituem domínios de falha independentes, de modo que latências absolutas refletem o escalonamento do \texttt{asyncio} e não uma rede real. (ii) Falhas, atraso e perda são injetados na camada de aplicação (\texttt{FaultInjector}), não no kernel (\texttt{tc/netem}). (iii) O detector de \textit{heartbeat} é não-confiável: um falso positivo pode liberar indevidamente a permissão de um par vivo e violar a exclusão mútua, risco mitigado (não eliminado) pela escolha de $\tau_{\text{suspect}}$. (iv) O estado das réplicas é volátil; a recuperação depende do \textit{Read-Repair}, sem log persistente.
 
 \section{Conclusão}
 
